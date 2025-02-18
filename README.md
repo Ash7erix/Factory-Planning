@@ -70,6 +70,8 @@ Where:
 ### Final Mathematical Formulation:
 
 #### **Objective:**
+
+
 $$
 \text{Maximize} \quad Z = \sum_{i=1}^{7} \sum_{j=1}^{6} C_i \cdot x_{ij} - 0.5 \times \left( \sum_{i=1}^{7} \text{Stock}_{i, 6} \right)
 $$
@@ -78,11 +80,13 @@ $$
 
 1. **Marketing Constraints:**
 
+
 $$
 x_{ij} \leq \text{Demand}_{ij}, \quad \forall i, j
 $$
 
 3. **Machine Capacity Constraints:**
+
 
 $$
 \sum_{i=1}^{7} \text{Time}_{p, i} \cdot x_{ij} \leq \text{Available Hours}_{p, j}, \quad \forall p, j
@@ -90,17 +94,20 @@ $$
 
 4. **Stock Balance Constraints:**
 
+   
 $$
 \text{Stock}_{i, j} = \text{Stock}_{i, j-1} + x_{ij} - \text{Demand}_{ij}, \quad j = 1, 2, \dots, 6
 $$
 
-5. **Stock End Constraint (for June):**
+6. **Stock End Constraint (for June):**
+
 
 $$
 \text{Stock}_{i, 6} = 50, \quad \forall i
 $$
 
 6. **Non-negativity Constraints:**
+
 
 $$
 x_{ij} \geq 0, \quad \forall i, j
