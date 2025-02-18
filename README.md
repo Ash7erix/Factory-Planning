@@ -10,9 +10,9 @@ Let \( x_{ij} \) be the number of units of product \( i \) produced in month \( 
 ### Objective Function:
 The objective is to maximize the total profit, which is the contribution per unit multiplied by the number of units produced, minus the stock holding cost and other constraints.
 
-\[
+$$
 \text{Maximize} \quad Z = \sum_{i=1}^{7} \sum_{j=1}^{6} C_i \cdot x_{ij} - \text{Stock Cost}
-\]
+$$
 
 Where:
 - \( C_i \) is the contribution to profit per unit for product \( i \).
