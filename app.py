@@ -1,22 +1,43 @@
 import streamlit as st
-from gurobipy import Model, GRB
-import matplotlib.pyplot as plt
+from fontTools.misc.timeTools import MONTHNAMES
+from gurobipy import Model, GRB, quicksum
 import pandas as pd
-import json
-import webbrowser
+import numpy as np
 import requests
-import re
+import json
+import matplotlib.pyplot as plt
 
-# **********************************************#
-# Data Handling
-# **********************************************#
+
 # Load data from JSON file
+with open("data.json", "r") as file:
+    data = json.load(file)
+
+#Data Handling
+months = range(0, 7)
+products = data["products"]
+demand = data["demand"]
+time_req = data["time_required"]
+monthname = {i + 1: data["months"][i] for i in range(len(data["months"]))}
+profit = {i + 1: data["profit"][i] for i in range(len(data["profit"]))}
+name_to_abbreviation = {"Grinding": "GR", "VerticalDrilling": "VD", "HorizontalDrilling": "HD", "Boring": "BR", "Planing": "PL"}
+processing_time = {name_to_abbreviation[key]: {i + 1: time_req[key][i] for i in range(len(time_req[key]))} for key in time_req}
+machine_availability = {name_to_abbreviation[key]: value for key, value in data["machine_availability"].items()}
+initial_inventory=data["initial_inventory"]
+final_inventory=data["final_inventory"]
+working_hours_per_day = data["working_hours_per_day"]
+working_days_per_month = data["working_days_per_month"]
+total_hours_per_machine = working_hours_per_day * working_days_per_month
+market_demand = {}
+for index, row in enumerate(demand, start=1):
+    market_demand[index] = {i: row[i] for i in range(len(row))}
 
 
-# **********************************************#
+
+#**********************************************#
 # === Streamlit Layout ===
-# **********************************************#
-st.set_page_config(page_title="Factory Planning Optimization", page_icon=":bar_chart:", layout="wide")
+#**********************************************#
+st.set_page_config(page_title="Factory Production Optimization", page_icon="🏭", layout="wide")
+
 st.markdown("""
     <style>
         .title-bar {
@@ -54,7 +75,7 @@ st.markdown("""
         }
     </style>
     <div class="title-bar">
-        <h1>Problem 12.1 <br> Food Manufacture</h1>
+        <h1>Problem 12.3 <br> Factory Planning</h1>
         <div>
             <a href="https://decisionopt.com" target="_blank">
                 <img src="https://decisionopt.com/static/media/DecisionOptLogo.7023a4e646b230de9fb8ff2717782860.svg" class="logo1" alt="Logo"/>
@@ -103,18 +124,16 @@ st.markdown("""
         }
     </style>
     <div class="container-c1">
-        <br><p >This app optimizes the food manufacturing process by selecting the best oils to refine 
-        each month, maximizing profit. It uses <b>Gurobi</b> for optimization, considering factors like oil 
-        costs, refining capacities, storage limits, and hardness constraints.</p> 
-        <br><p>You can also adjust the parameters like refining capacities, storage costs, and oil prices, 
-        using the options on the left side and the app provides detailed results including oil purchase, 
-        refining, storage, and production data for each month.</p>
+        <br><p>This app optimizes the factory production process by determining the optimal quantity of 
+        products to manufacture, store, and sell each month, maximizing overall profit. It utilizes 
+        <b>Gurobi</b> for optimization, considering factors such as production capacity, market demand, 
+        inventory limits, and storage costs.</p>  
+        <br><p>You can customize key parameters like storage costs and production limits using the options on 
+        the left side. The app provides detailed insights, including monthly production, previously held stock, 
+        sold quantities, and remaining inventory, helping you make data-driven decisions.</p>
     </div>
 """, unsafe_allow_html=True)
 
-# **********************************************#
-# Convert the prices dictionary into a DataFrame for display
-# **********************************************#
 st.title("Optimization Data and Constraints:")
 st.markdown("""
     <style>
@@ -126,14 +145,11 @@ st.markdown("""
         <br><p> You can view the mathematical formulation below by clicking the button.</p>
     </div>
 """, unsafe_allow_html=True)
-
 if st.button('Display Formulation'):
     def fetch_readme(repo_url):
         raw_url = f"{repo_url}/raw/main/12.1_Food_Manufacture/README.md"  # Adjust path if necessary
         response = requests.get(raw_url)
         return response.text
-
-
     repo_url = "https://github.com/Ash7erix/Model_Building_Assignments"
     try:
         readme_content = fetch_readme(repo_url)
@@ -141,20 +157,107 @@ if st.button('Display Formulation'):
     except Exception as e:
         st.error(f"Could not fetch README: {e}")
 
-# **********************************************#
-#           Sidebar for user inputs
-# **********************************************#
+
+st.sidebar.header("Optimization Parameters")
+storage_cost = st.sidebar.number_input("Storage Cost per Unit (£)", min_value=0.0, value=0.5)
+max_inventory = st.sidebar.number_input("Maximum Inventory per Product", min_value=0, value=100)
+initial_inventory = st.sidebar.number_input("Initial Inventory", min_value=0, value=0)
+final_inventory = st.sidebar.number_input("Final Inventory", min_value=0, value=50)
+working_hours_per_day = st.sidebar.number_input("Working hours per day", min_value=0, value=16)
+working_days_per_month = st.sidebar.number_input("Working days per month", min_value=0, value=24)
+total_hours_per_machine = working_hours_per_day*working_days_per_month
+updated_parameters = {
+    "Working Hours per Day": working_hours_per_day,
+    "Working Days per Month": working_days_per_month,
+    "Total Hours per Machine": total_hours_per_machine,
+    "Max Inventory per Product": max_inventory,
+    "Initial Inventory": initial_inventory,
+    "Final Inventory": final_inventory,
+    "Storage Cost (£)": storage_cost
+}
+col1, col2 = st.columns(2)
+
+# Market Demand Table
+with col1:
+    st.subheader("Market Demand:")
+    market_demand_df = pd.DataFrame(market_demand).T
+    market_demand_df.columns = [f"Prod {i}" for i in products]
+    market_demand_df.index = [monthname[t + 1] for t in months]
+    st.dataframe(market_demand_df)
+    #
+    st.subheader("Key Parameters:")
+    parameters_df = pd.DataFrame(list(updated_parameters.items()), columns=["Key Parameters", "Value"])
+    parameters_df.index = range(1, len(parameters_df) + 1)
+    st.dataframe(parameters_df)
 
 
+with col2:
+    st.subheader("Processing Time (Hours per Unit):")
+    processing_time_df = pd.DataFrame(processing_time)
+    processing_time_df.index = [f"Prod {i}" for i in products]
+    st.dataframe(processing_time_df)
+    #
+    st.subheader("Machine Availability (Hours per Month):")
+    machine_avail_df = pd.DataFrame(machine_availability)
+    machine_avail_df.index = [monthname[t + 1] for t in range(len(machine_availability["GR"]))]
+    st.dataframe(machine_avail_df)
 
-# **********************************************#
-#              Optimization Model
-# **********************************************#
+
+st.markdown("""---""")
+
+# Create Gurobi model
+model = Model("Factory_Production_Optimization")
+
+# Decision variables
+MPROD = model.addVars(products, months, lb=0, name="MPROD")  # Manufactured quantities
+SPROD = model.addVars(products, months, lb=0, name="SPROD")  # Sold quantities
+HPROD = model.addVars(products, months, lb=0, name="HPROD")  # Held quantities
+
+# Objective function: Maximize total profit
+model.setObjective(
+    quicksum(profit[i] * SPROD[i, t] for i in products for t in months) -
+    storage_cost * quicksum(HPROD[i, t] for i in products for t in months),
+    GRB.MAXIMIZE
+)
+
+# Machine capacity constraints
+for machine in ["GR", "VD", "HD", "BR", "PL"]:
+    for t in months:
+        available_capacity = machine_availability[machine][max(0, t - 1)] * total_hours_per_machine
+        model.addConstr(
+            quicksum(processing_time.get(machine, {}).get(i, 0) * MPROD[i, t] for i in products) <= available_capacity,
+            f"{machine}_capacity_month_{t}"
+        )
+
+# Market demand constraints
+for i in products:
+    for t in months:
+        model.addConstr(SPROD[i, t] <= market_demand[i][t], f"Market_demand_{i}_month_{t}")
+
+# Sales limit constraint
+for i in products:
+    for t in months:
+        model.addConstr(SPROD[i, t] <= MPROD[i, t] + HPROD[i, t], f"Sales_limit_{i}_month_{t}")
+
+# Inventory balance constraints
+for i in products:
+    for t in range(1, 7):
+        model.addConstr(HPROD[i, t - 1] + MPROD[i, t] - SPROD[i, t] - HPROD[i, t] == 0, f"Stock_balance_{i}_month_{t}")
+
+# End inventory constraints
+for i in products:
+    model.addConstr(HPROD[i, 6] == final_inventory, f"End_inventory_{i}")
+
+# Initial inventory constraints
+for i in products:
+    model.addConstr(HPROD[i, 1] == initial_inventory, f"Initial_inventory_{i}")
+
+# Max inventory constraint
+for i in products:
+    for t in months:
+        model.addConstr(HPROD[i, t] <= max_inventory, f"Max_hold_{i}_month_{t}")
 
 
-# **********************************************#
-# Solve Model when the button is clicked
-# **********************************************#
 st.markdown("""
     <style>
         .container-c2 p {
@@ -166,47 +269,173 @@ st.markdown("""
         <br><p>Click on the button below to solve the optimization problem.</p>
     </div>
 """, unsafe_allow_html=True)
+## Solve the model
 if st.button("Solve Optimization"):
-        st.markdown("""
-            <style>
-                footer {
-                    text-align: center;
-                    background-color: #f1f1f1;
-                    color: #333;
-                    font-size: 19px;
-                    margin-bottom:0px;
-                }
-                footer img {
-                    width: 44px; /* Adjust size of the logo */
-                    height: 44px;
-                }
-            </style>
-            <footer>
-                <h1>Author- Ashutosh <a href="https://www.linkedin.com/in/ashutoshpatel24x7/" target="_blank">
-                <img src="https://decisionopt.com/static/media/LinkedIn.a6ad49e25c9a6b06030ba1b949fcd1f4.svg" class="img" alt="Logo"/></h1>
-            </footer>
-        """, unsafe_allow_html=True)
-        st.markdown("""---
-        """, unsafe_allow_html=True)
+    model.optimize()
 
-else:
-    st.write("No optimal solution found.")
-    st.markdown("""
-        <style>
-        footer {
-            text-align: center;
-            background-color: #f1f1f1;
-            color: #333;
-            font-size: 19px;
-        }
-        footer img {
-            width: 44px; /* Adjust size of the logo */
-            height: 44px;
-        }
-        </style>
-        <footer>
-            <h1>Author- Ashutosh <a href="https://www.linkedin.com/in/ashutoshpatel24x7/" target="_blank">
-            <img src="https://decisionopt.com/static/media/LinkedIn.a6ad49e25c9a6b06030ba1b949fcd1f4.svg" class="img" alt="Logo"/></h1>
-        </footer>
-        """, unsafe_allow_html=True)
-    st.markdown("""---""")
+    if model.status == GRB.OPTIMAL:
+        st.markdown("""---""")
+        total_profit = model.objVal
+        st.markdown(f"<h3>Total Profit : <span style='color:rgba(255, 75, 75, 1)  ;'> <b>£{total_profit:.2f}</b></span></h3>",unsafe_allow_html=True)
+        st.markdown("""---""")
+
+        # Collect data for each product across months
+        # Collect data for each product across months
+        produced_data = {}
+        sold_data = {}
+        held_data = {}
+
+        for product in products:
+            produced_data[product] = [MPROD[product, t].x for t in months]
+            sold_data[product] = [SPROD[product, t].x for t in months]
+            held_data[product] = [HPROD[product, t].x for t in months]
+
+        # Display Production Trends
+        st.markdown(f"<h1>Production Trends:</h1>", unsafe_allow_html=True)
+        fig_produced, ax_produced = plt.subplots(figsize=(8, 5))
+        for product in products:
+            ax_produced.plot(months, produced_data[product], label=f"Product {product}", marker='o', linestyle='-',
+                             markersize=6)
+        ax_produced.set_title("Production Over Time", fontsize=16)
+        ax_produced.set_xlabel("Months", fontsize=12)
+        ax_produced.set_ylabel("Quantity", fontsize=12)
+        ax_produced.legend(title="Product", fontsize=10, loc='upper left',
+                           bbox_to_anchor=(1, 1))  # Legend moved to right
+        ax_produced.grid(True)
+        st.pyplot(fig_produced)
+
+        # Display Sales Trends
+        st.markdown(f"<h1>Sales Trends:</h1>", unsafe_allow_html=True)
+        fig_sold, ax_sold = plt.subplots(figsize=(8, 5))
+        for product in products:
+            ax_sold.plot(months, sold_data[product], label=f"Product {product}", marker='o', linestyle='-',
+                         markersize=6)
+        ax_sold.set_title("Sales Over Time", fontsize=16)
+        ax_sold.set_xlabel("Months", fontsize=12)
+        ax_sold.set_ylabel("Quantity", fontsize=12)
+        ax_sold.legend(title="Product", fontsize=10, loc='upper left', bbox_to_anchor=(1, 1))  # Legend moved to right
+        ax_sold.grid(True)
+        st.pyplot(fig_sold)
+
+        # Display Storage Trends
+        st.markdown(f"<h1>Inventory Trends:</h1>", unsafe_allow_html=True)
+        fig_held, ax_held = plt.subplots(figsize=(8, 5))
+        for product in products:
+            ax_held.plot(months, held_data[product], label=f"Product {product}", marker='o', linestyle='-',
+                         markersize=6)
+        ax_held.set_title("Inventory Held Over Time", fontsize=16)
+        ax_held.set_xlabel("Months", fontsize=12)
+        ax_held.set_ylabel("Quantity", fontsize=12)
+        ax_held.legend(title="Product", fontsize=10, loc='upper left', bbox_to_anchor=(1, 1))  # Legend moved to right
+        ax_held.grid(True)
+        st.pyplot(fig_held)
+
+        st.markdown("""---""")
+
+        # Display Bar Graphs for Each Month
+        for t in months:
+            if t>0:
+                st.subheader(f"**Month :** {monthname[t]}")
+                col1, col2 = st.columns(2)
+                with col1:
+                    with col1:
+                        fig, ax = plt.subplots(figsize=(4, 3))  # Compact plot size
+
+                        # Data for the plot
+                        monthly_data = {
+                            "Manufactured": [MPROD[p, t].x for p in products],
+                            "Sold": [SPROD[p, t].x for p in products],
+                            "Held": [HPROD[p, t].x for p in products],
+                        }
+                        df = pd.DataFrame(monthly_data, index=[f"PROD {p}" for p in products])
+
+                        # Plot the bar chart
+                        df.plot(kind='bar', ax=ax, width=0.7)
+
+                        # Adjust font sizes for title, axes labels, and ticks
+                        ax.set_title(f"Production Overview - {monthname[t]}", fontsize=8)
+                        ax.set_xlabel("Products", fontsize=7)
+                        ax.set_ylabel("Quantity", fontsize=7)
+                        ax.tick_params(axis='both', labelsize=6)
+
+                        # Adjust legend
+                        ax.legend(fontsize=6, loc='upper left', bbox_to_anchor=(1, 1))
+
+                        # Optimize layout for compact space
+                        plt.tight_layout(pad=1.0)
+
+                        # Display the plot in Streamlit
+                        st.pyplot(fig, use_container_width=False)
+
+                with col2:
+                    st.write(f"**Production Data for {monthname[t]}:**")
+
+                    # Create a dictionary to store data per product
+                    production_metrics = {
+                        f"Product {p}": [
+                            round(MPROD[p, t].x, 1),  # Manufactured this month
+                            round(HPROD[p, t - 1].x if t > 1 else 0, 1),  # Previously Held (from last month)
+                            round(SPROD[p, t].x, 1),  # Sold this month
+                            round(HPROD[p, t].x, 1),  # Stored at end of month
+                        ]
+                        for p in products
+                    }
+
+                    # Convert dictionary to DataFrame
+                    production_table = pd.DataFrame(
+                        production_metrics,
+                        index=["Manufactured", "Previously Held", "Sold", "Held"]
+                    ).T
+                    st.write(production_table)
+                    month_profit = (
+                            sum(profit[p] * SPROD[p, t].x for p in products) -
+                            storage_cost * sum(HPROD[p, t].x for p in products)
+                    )
+                    st.write(f"**Profit :** £{month_profit:.2f}")
+
+                # Add a separator for clarity
+                st.markdown("""---""")
+
+        st.markdown("""
+                    <style>
+                        footer {
+                            text-align: center;
+                            background-color: #f1f1f1;
+                            color: #333;
+                            font-size: 19px;
+                            margin-bottom:0px;
+                        }
+                        footer img {
+                            width: 44px; /* Adjust size of the logo */
+                            height: 44px;
+                        }
+                    </style>
+                    <footer>
+                        <h1>Author- Ashutosh <a href="https://www.linkedin.com/in/ashutoshpatel24x7/" target="_blank">
+                        <img src="https://decisionopt.com/static/media/LinkedIn.a6ad49e25c9a6b06030ba1b949fcd1f4.svg" class="img" alt="Logo"/></h1>
+                    </footer>
+                """, unsafe_allow_html=True)
+        st.markdown("""---""")
+
+    else:
+        st.error("No optimal solution found!")
+        st.markdown("""
+                    <style>
+                        footer {
+                            text-align: center;
+                            background-color: #f1f1f1;
+                            color: #333;
+                            font-size: 19px;
+                            margin-bottom:0px;
+                        }
+                        footer img {
+                            width: 44px; /* Adjust size of the logo */
+                            height: 44px;
+                        }
+                    </style>
+                    <footer>
+                        <h1>Author- Ashutosh <a href="https://www.linkedin.com/in/ashutoshpatel24x7/" target="_blank">
+                        <img src="https://decisionopt.com/static/media/LinkedIn.a6ad49e25c9a6b06030ba1b949fcd1f4.svg" class="img" alt="Logo"/></h1>
+                    </footer>
+                """, unsafe_allow_html=True)
+        st.markdown("""---""")
