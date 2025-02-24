@@ -133,8 +133,6 @@ st.markdown("""
         sold quantities, and remaining inventory, helping you make data-driven decisions.</p>
     </div>
 """, unsafe_allow_html=True)
-
-st.title("Optimization Data and Constraints:")
 st.markdown("""
     <style>
         .container-c1 p {
@@ -154,10 +152,12 @@ if st.button('Display Formulation'):
     try:
         readme_content = fetch_readme(repo_url)
         st.markdown(readme_content)
+        st.markdown("""---""")
     except Exception as e:
         st.error(f"Could not fetch README: {e}")
+        st.markdown("""---""")
 
-
+st.title("Optimization Data and Constraints:")
 st.sidebar.header("Optimization Parameters")
 storage_cost = st.sidebar.number_input("Storage Cost per Unit (£)", min_value=0.0, value=0.5)
 max_inventory = st.sidebar.number_input("Maximum Inventory per Product", min_value=0, value=100)
@@ -204,6 +204,8 @@ with col2:
 
 
 st.markdown("""---""")
+
+
 
 # Create Gurobi model
 model = Model("Factory_Production_Optimization")
